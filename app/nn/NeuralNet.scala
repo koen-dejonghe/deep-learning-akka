@@ -22,6 +22,13 @@ class NeuralNet(topology: List[Int]) {
 
   def backProp(x: Vector, y: Vector): (List[Vector], List[Matrix]) = {
 
+    /*
+    forward pass
+     */
+    val (zs, activations) = feedForward(x)
+
+    var delta = (activations.last - y) * sigmoidPrime(zs.last)
+
     val nablaBiases: List[Vector] = topology.tail.map { size =>
       DenseVector.zeros[Double](size)
     }
@@ -31,25 +38,20 @@ class NeuralNet(topology: List[Int]) {
       .map(t => DenseMatrix.zeros[Double](t(1), t.head))
       .toList
 
-    /*
-    forward pass
-     */
-    val (zs, activations) = feedForward(x)
-
-    var delta = (activations.last - y) * sigmoidPrime(zs.last)
-
     nablaBiases.last :=  delta
     nablaWeights.last := delta * activations(activations.size - 2).t
 
-    for (layer <- topology.size - 2 to 0 by -1) {
-      val z = zs(layer)
+    for (l <- 2 until topology.size) {
+
+      val z = zs(zs.size - l)
       val sp = sigmoidPrime(z)
-      delta = (weights(layer + 1).t * delta) * sp
+      delta = (weights(weights.size - l + 1).t * delta) * sp
+
+      nablaBiases(nablaBiases.size - l) := delta
+      nablaWeights(nablaWeights.size - l) := delta * activations(activations.size - l - 1).t
     }
 
-
     (nablaBiases, nablaWeights)
-
   }
 
   def feedForward(x: Vector): (List[Vector], List[Vector]) =

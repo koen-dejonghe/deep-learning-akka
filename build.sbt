@@ -15,4 +15,7 @@ libraryDependencies ++= Seq(
 
 libraryDependencies += "com.typesafe.akka" %% "akka-testkit" % "2.5.2"
 
+libraryDependencies += "org.scalanlp" %% "breeze" % "0.13.1"
+libraryDependencies += "org.scalanlp" %% "breeze-natives" % "0.13.1"
+
 

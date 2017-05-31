@@ -1,51 +1,79 @@
 package actors
 
-import akka.actor.{Actor, ActorRef, Props}
-import math.Vector
+import akka.actor.{Actor, ActorLogging, ActorRef, Props}
+import math._
 
+import scala.annotation.tailrec
 import scala.language.postfixOps
 import scala.util.Random
 
-class Network(topology: List[Int], collector: ActorRef) extends Actor {
+class Network(topology: List[Int], learningRate: Double, collector: ActorRef) extends Actor with ActorLogging {
 
   val numLayers: Int = topology.size
-  val network: List[List[ActorRef]] = build(numLayers-1, List(List(collector)))
+  val network: List[List[ActorRef]] =
+    build(numLayers - 1, List(List(self)))
 
-  def build(i: Int, accumulator: List[List[ActorRef]]): List[List[ActorRef]] = {
+  @tailrec
+  private def build(i: Int,
+                    accumulator: List[List[ActorRef]]): List[List[ActorRef]] =
     i match {
-      case 0 => accumulator
+      case 0 => accumulator // do not include input layer
       case _ =>
-        val layer = buildLayer(topology(i), topology(i-1), accumulator.head)
-        build(i-1, layer :: accumulator)
+        val layer = buildLayer(i, topology(i), topology(i - 1), accumulator.head)
+        build(i - 1, layer :: accumulator)
     }
-  }
 
-  def buildLayer(size: Int,
-                 sizePrevLayer: Int,
+  def buildLayer(layer: Int,
+                 layerSize: Int,
+                 prevLayerSize: Int,
                  targetLayer: List[ActorRef]): List[ActorRef] = {
-    val seq = for (i <- 0 until size) yield {
-      val weights = Vector.randn(sizePrevLayer)
+    val seq = for (neuron <- 0 until layerSize) yield {
+      val weights = Vector.randn(prevLayerSize)
       val bias = Random.nextGaussian()
-      context.system.actorOf(Neuron.props(targetLayer, i, weights, bias, sigmoid))
+      context.system
+        .actorOf(Neuron.props(targetLayer, neuron, learningRate, weights, bias, sigmoid))
     }
     seq.toList
   }
 
-  def sigmoid(z: Double): Double = 1 / (1 + Math.exp(-z))
-
   override def receive: Receive = {
-    case v: Vector =>
-      require(v.size == topology.head)
-      v.xs.zipWithIndex.foreach { x =>
+    case (x: Vector, y: Vector) =>
+
+      log.debug(s"received: $x, $y")
+
+      require(x.size == topology.head)
+      x.output().foreach { o =>
         network.head.foreach { node =>
-          node ! Output(x._2, x._1)
+          node ! o
         }
       }
-    case _ =>
+      context.become(sgd(x, y))
+
+    case unknown =>
+      log.debug(s"ignoring: $unknown")
+
   }
+
+  def sgd(x: Vector, y: Vector, output: Map[Int, Double] = Map.empty[Int, Double]): Receive = {
+    case Activation(n, activation) =>
+
+      log.debug(s"sgd received activation: $n, $activation")
+      val delta = (activation - y.xs(n)) * derivative(activation)
+
+      sender() ! Delta(n, delta)
+
+    case Delta(n, d) =>
+      log.debug(s"sgd received delta: ($n, $d)")
+
+    case unknown =>
+      log.debug(s"ignoring: $unknown")
+  }
+
 }
 
 object Network {
-  def props(topology: List[Int], collector: ActorRef): Props =
-    Props(new Network(topology, collector))
+
+  def props(topology: List[Int], learningRate: Double, collector: ActorRef): Props =
+    Props(new Network(topology, learningRate, collector))
+
 }

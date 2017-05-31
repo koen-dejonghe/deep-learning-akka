@@ -22,7 +22,7 @@ class Perceptron(weights: Vector, bias: Double, targets: List[ActorRef]) extends
   }
 
   def fire(xs: Vector): Unit =
-    if (xs * weights + bias > 0.0)
+    if (xs.dot(weights) + bias > 0.0)
       targets.foreach(t => t ! 1.0)
     else
       targets.foreach(t => t ! 0.0)

@@ -17,24 +17,30 @@ class NetworkSpec extends TestKit(ActorSystem("NetworkSpec")) with ImplicitSende
 
       val probe = TestProbe()
 
-      val topology = List(784, 15, 10)
-      val network = system.actorOf(Network.props(topology, probe.ref))
-      val v = Vector.randn(784)
-      network ! v
+      val topology = List(3, 15, 10)
+      val learningRate = 3.0
+      val network = system.actorOf(Network.props(topology, learningRate, probe.ref))
+
+      val v = Vector.randn(3)
+      network ! (v, Vector.oneHotEncoded(9))
+
       val output = probe.receiveN(10)
-      probe.expectNoMsg()
       println(output)
+
+      probe.expectNoMsg()
     }
 
     "forward propagate again" in {
       val probe = TestProbe()
+
       val topology = List(1, 1)
-      val network = system.actorOf(Network.props(topology, probe.ref))
+      val learningRate = 3.0
+      val network = system.actorOf(Network.props(topology, learningRate, probe.ref))
       network ! Vector(0.1)
-      val output = probe.receiveN(1).head.asInstanceOf[Output]
+      val output = probe.receiveN(1).head.asInstanceOf[Activation]
       println(output)
       network ! Vector(output.value)
-      val output2 = probe.receiveN(1).head.asInstanceOf[Output]
+      val output2 = probe.receiveN(1).head.asInstanceOf[Activation]
       println(output2)
     }
   }

@@ -41,7 +41,7 @@ class Nd4jNet(topology: List[Int]) {
           epochs: Int,
           miniBatchSize: Int,
           learningRate: Double,
-          testData: List[(INDArray, INDArray)] = List.empty): Unit = {
+          testData: List[(INDArray, Int)] = List.empty): Unit = {
 
     (1 to epochs).foreach { j =>
       println(s"Epoch $j starting")
@@ -160,7 +160,7 @@ class Nd4jNet(topology: List[Int]) {
     sz.mul(sz.neg().add(1.0))
   }
 
-  def evaluate(testData: List[(INDArray, INDArray)]): Double = {
+  def evaluate(testData: List[(INDArray, Int)]): Double = {
     val correct = testData.foldLeft(0.0) {
       case (t, (x, y)) =>
         val activation = biases.zip(weights).foldLeft(x) {
@@ -168,10 +168,9 @@ class Nd4jNet(topology: List[Int]) {
             sigmoid(w.mmul(a).add(b))
         }
 
-        val guess = argMax(activation)
-        val truth = argMax(y)
+        val guess = argMax(activation).getInt(0)
 
-        if (guess == truth) t + 1 else t
+        if (guess == y) t + 1 else t
     }
     correct / testData.size.toDouble
   }
@@ -188,11 +187,11 @@ object Nd4jNet {
   def gzis(fname: String): GZIPInputStream =
     new GZIPInputStream(new BufferedInputStream(new FileInputStream(fname)))
 
-  def loadData(fname: String): List[(INDArray, INDArray)] = {
+  def loadData(fname: String): List[(INDArray, Int)] = {
     Source.fromInputStream(gzis(fname)).getLines() map { line =>
       val tokens = line.split(",")
       val (y, x) = (tokens.head.toInt, tokens.tail.map(_.toDouble / 255.0))
-      (create(x).transpose(), oneHotEncoded(y))
+      (create(x).transpose(), y)
     } toList
   }
 
@@ -204,7 +203,7 @@ object Nd4jNet {
     val epochs = 30
     val batchSize = 10
     val learningRate = 3.0
-    val trainingData = Nd4jNet.loadData("data/mnist_train.csv.gz")
+    val trainingData = Nd4jNet.loadData("data/mnist_train.csv.gz").map{case (x, y) => (x, oneHotEncoded(y))}
     val testData = Nd4jNet.loadData("data/mnist_test.csv.gz")
     nn.sgd(trainingData, epochs, batchSize, learningRate, testData)
   }

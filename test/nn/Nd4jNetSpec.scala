@@ -1,9 +1,10 @@
 package nn
 
-import breeze.linalg.DenseVector
+import org.nd4j.linalg.factory.Nd4j._
 import org.scalatestplus.play.PlaySpec
 
-import org.nd4j.linalg.factory.Nd4j._
+import scala.language.postfixOps
+import scala.util.Random
 class Nd4jNetSpec extends PlaySpec {
 
   "A NeuralNet" must {
@@ -40,11 +41,6 @@ class Nd4jNetSpec extends PlaySpec {
       println(as)
     }
 
-    "one hot encode" in {
-      val ohe = NeuralNet.oneHotEncoded(3)
-      ohe mustBe DenseVector(0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    }
-
     "back prop" in {
       val topology = List(3, 4, 10)
       val nn = new Nd4jNet(topology)
@@ -68,8 +64,50 @@ class Nd4jNetSpec extends PlaySpec {
         nw(i).shape()(0) mustBe y
         nw(i).shape()(1) mustBe x
       }
-
     }
+
+    "mini batch" in {
+      val topology = List(3, 4, 10)
+      val nn = new Nd4jNet(topology)
+
+      println("========> before")
+      println(nn.biases)
+      println(nn.weights)
+
+      val miniBatch = (1 to 5).map { _ =>
+        (rand(3, 1), Nd4jNet.oneHotEncoded(Random.nextInt(10)))
+      } toList
+
+      nn.updateMiniBatch(miniBatch, 3.0)
+
+      println("========> after")
+      println(nn.biases)
+      println(nn.weights)
+    }
+
+    "sgd" in {
+      val topology = List(3, 4, 10)
+      val nn = new Nd4jNet(topology)
+
+      println("========> before")
+      println(nn.biases)
+      println(nn.weights)
+
+      val trainingData = (1 to 10).map { _ =>
+        (rand(3, 1), Nd4jNet.oneHotEncoded(Random.nextInt(10)))
+      } toList
+
+      val epochs = 3
+      val batchSize = 2
+      val learningRate = 3.0
+
+      nn.sgd(trainingData, epochs, batchSize, learningRate)
+
+      println("========> after")
+      println(nn.biases)
+      println(nn.weights)
+    }
+
   }
 
 }

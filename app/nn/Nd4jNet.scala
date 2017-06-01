@@ -46,10 +46,8 @@ class Nd4jNet(topology: List[Int]) {
     (1 to epochs).foreach { j =>
       println(s"Epoch $j starting")
       val shuffled = Random.shuffle(trainingData)
-      shuffled.sliding(miniBatchSize, miniBatchSize).zipWithIndex.foreach {
-        case (miniBatch, i) =>
-//          println(s"Batch $j.$i")
-          updateMiniBatch(miniBatch, learningRate)
+      shuffled.sliding(miniBatchSize, miniBatchSize).foreach { miniBatch =>
+        updateMiniBatch(miniBatch, learningRate)
       }
 
       if (testData.nonEmpty) {
@@ -120,7 +118,6 @@ class Nd4jNet(topology: List[Int]) {
 
     val (zs, activations) = feedForward(x)
 
-    // delta = cost_derivative(activations[-1], y) * sigmoid_prime(zs[-1])
     // delta = (activations[-1] - y) * sigmoid_prime(zs[-1])
     val a = activations.last.sub(y)
     val sp = sigmoidPrime(zs.last)
@@ -166,23 +163,13 @@ class Nd4jNet(topology: List[Int]) {
   def evaluate(testData: List[(INDArray, INDArray)]): Double = {
     val correct = testData.foldLeft(0.0) {
       case (t, (x, y)) =>
-        /*
-        for b, w in zip(self.biases, self.weights):
-        a = sigmoid(np.dot(w, a)+b)
-         */
-
         val activation = biases.zip(weights).foldLeft(x) {
           case (a, (b, w)) =>
             sigmoid(w.mmul(a).add(b))
         }
 
-//        println(activation)
-
         val guess = argMax(activation)
         val truth = argMax(y)
-
-//        println(s"guess => $guess")
-//        println(s"truth => $truth")
 
         if (guess == truth) t + 1 else t
     }
@@ -203,7 +190,6 @@ object Nd4jNet {
 
   def loadData(fname: String): List[(INDArray, INDArray)] = {
     Source.fromInputStream(gzis(fname)).getLines() map { line =>
-//    Source.fromFile(fname).getLines() map { line =>
       val tokens = line.split(",")
       val (y, x) = (tokens.head.toInt, tokens.tail.map(_.toDouble / 255.0))
       (create(x).transpose(), oneHotEncoded(y))

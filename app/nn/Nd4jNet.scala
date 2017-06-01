@@ -1,24 +1,29 @@
 package nn
 
-import org.nd4j.jita.conf.CudaEnvironment
+import java.io.{BufferedInputStream, FileInputStream}
+import java.util.zip.GZIPInputStream
+
 import org.nd4j.linalg.api.ndarray.INDArray
 import org.nd4j.linalg.factory.Nd4j._
 import org.nd4j.linalg.ops.transforms.Transforms._
 import org.nd4j.linalg.api.buffer.DataBuffer
 import org.nd4j.linalg.api.buffer.util.DataTypeUtil
 
+import scala.io.Source
+import scala.language.postfixOps
 import scala.util.Random
 
 class Nd4jNet(topology: List[Int]) {
 
+//  DataTypeUtil.setDTypeForContext(DataBuffer.Type.DOUBLE)
+
+  /*
   CudaEnvironment
     .getInstance()
     .getConfiguration
-//    .setPoolSize(24)
+    .setPoolSize(24)
     .setVerbose(true)
-//    .enableDebug(true)
-
-  DataTypeUtil.setDTypeForContext(DataBuffer.Type.DOUBLE)
+   */
 
   val biases: List[INDArray] =
     topology.tail.map(size => randn(size, 1))
@@ -35,14 +40,24 @@ class Nd4jNet(topology: List[Int]) {
   def sgd(trainingData: List[(INDArray, INDArray)],
           epochs: Int,
           miniBatchSize: Int,
-          learningRate: Double): Unit = {
+          learningRate: Double,
+          testData: List[(INDArray, INDArray)] = List.empty): Unit = {
 
     (1 to epochs).foreach { j =>
+      println(s"Epoch $j starting")
       val shuffled = Random.shuffle(trainingData)
-      shuffled.sliding(miniBatchSize).foreach { miniBatch =>
-        updateMiniBatch(miniBatch, learningRate)
+      shuffled.sliding(miniBatchSize, miniBatchSize).zipWithIndex.foreach {
+        case (miniBatch, i) =>
+//          println(s"Batch $j.$i")
+          updateMiniBatch(miniBatch, learningRate)
       }
-      println(s"Epoch $j complete")
+
+      if (testData.nonEmpty) {
+        val eval = evaluate(testData)
+        println(s"Epoch $j ==> $eval")
+      } else {
+        println(s"Epoch $j complete")
+      }
     }
   }
 
@@ -85,12 +100,12 @@ class Nd4jNet(topology: List[Int]) {
 
     biases.zip(nablaBiases).foreach {
       case (b, nb) =>
-        b.subi(nb.mul(learningRate * miniBatch.size))
+        b.subi(nb.mul(learningRate / miniBatch.size))
     }
 
     weights.zip(nablaWeights).foreach {
       case (w, nw) =>
-        w.subi(nw.mul(learningRate * miniBatch.size))
+        w.subi(nw.mul(learningRate / miniBatch.size))
     }
 
   }
@@ -148,6 +163,32 @@ class Nd4jNet(topology: List[Int]) {
     sz.mul(sz.neg().add(1.0))
   }
 
+  def evaluate(testData: List[(INDArray, INDArray)]): Double = {
+    val correct = testData.foldLeft(0.0) {
+      case (t, (x, y)) =>
+        /*
+        for b, w in zip(self.biases, self.weights):
+        a = sigmoid(np.dot(w, a)+b)
+         */
+
+        val activation = biases.zip(weights).foldLeft(x) {
+          case (a, (b, w)) =>
+            sigmoid(w.mmul(a).add(b))
+        }
+
+//        println(activation)
+
+        val guess = argMax(activation)
+        val truth = argMax(y)
+
+//        println(s"guess => $guess")
+//        println(s"truth => $truth")
+
+        if (guess == truth) t + 1 else t
+    }
+    correct / testData.size.toDouble
+  }
+
 }
 
 object Nd4jNet {
@@ -156,4 +197,30 @@ object Nd4jNet {
     val v = zeros(1, base)
     v.putScalar(x, 1.0)
   }
+
+  def gzis(fname: String): GZIPInputStream =
+    new GZIPInputStream(new BufferedInputStream(new FileInputStream(fname)))
+
+  def loadData(fname: String): List[(INDArray, INDArray)] = {
+    Source.fromInputStream(gzis(fname)).getLines() map { line =>
+//    Source.fromFile(fname).getLines() map { line =>
+      val tokens = line.split(",")
+      val (y, x) = (tokens.head.toInt, tokens.tail.map(_.toDouble / 255.0))
+      (create(x).transpose(), oneHotEncoded(y))
+    } toList
+  }
+
+  def main(args: Array[String]) {
+    println("Hello, world")
+
+    val topology = args.map(_.toInt).toList
+    val nn = new Nd4jNet(topology)
+    val epochs = 30
+    val batchSize = 10
+    val learningRate = 3.0
+    val trainingData = Nd4jNet.loadData("data/mnist_train.csv.gz")
+    val testData = Nd4jNet.loadData("data/mnist_test.csv.gz")
+    nn.sgd(trainingData, epochs, batchSize, learningRate, testData)
+  }
+
 }

@@ -108,6 +108,18 @@ class Nd4jNetSpec extends PlaySpec {
       println(nn.weights)
     }
 
+    "run" in {
+
+      val topology = List(784, 15, 10)
+      val nn = new Nd4jNet(topology)
+      val epochs = 3
+      val batchSize = 100
+      val learningRate = 3.0
+      val trainingData = Nd4jNet.loadData("data/mnist_train.csv")
+      nn.sgd(trainingData, epochs, batchSize, learningRate)
+
+    }
+
   }
 
 }

@@ -125,22 +125,18 @@ class Nd4jNet(topology: List[Int]) {
     // np.dot(delta, activations[-2].transpose())
     val inw = delta.mmul(activations(activations.size - 2).transpose())
 
-    val (nablaBiases, nablaWeights) = (2 until topology.size)
+    val (nablaBiases, nablaWeights) = (topology.size - 2 until 0 by -1)
       .foldLeft((List(inb), List(inw))) {
         case ((nbl, nwl), l) =>
-          // z = zs[-l]
-          val sp = derivative(activations(activations.size - l))
+          val sp = derivative(activations(l))
 
-          // delta = np.dot(self.weights[-l+1].transpose(), delta) * sp
-          val delta = weights(weights.size - l + 1)
+          val delta = weights(l)
             .transpose()
             .mmul(nbl.head) // last added nb to nbl is the previous delta
             .mul(sp)
 
           val nb = delta
-          // nabla_w[-l] = np.dot(delta, activations[-l-1].transpose())
-          val nw =
-            delta.mmul(activations(activations.size - l - 1).transpose())
+          val nw = delta.mmul(activations(l - 1).transpose())
 
           (nb :: nbl, nw :: nwl)
       }
@@ -150,11 +146,9 @@ class Nd4jNet(topology: List[Int]) {
 
   /**
     * Derivative of the sigmoid function.
+    * sigmoid(z)*(1-sigmoid(z))
     */
-  def derivative(z: INDArray): INDArray = {
-    // sigmoid(z)*(1-sigmoid(z))
-    z.mul(z.neg().add(1.0))
-  }
+  def derivative(z: INDArray): INDArray = z.mul(z.neg().add(1.0))
 
   def evaluate(testData: List[(INDArray, Int)]): Double = {
     val correct = testData.foldLeft(0.0) {
@@ -194,7 +188,7 @@ object Nd4jNet {
   def main(args: Array[String]) {
     println("Hello, world")
 
-    val topology = args.map(_.toInt).toList
+    val topology = List(784, 30, 30, 10)
     val nn = new Nd4jNet(topology)
     val epochs = 30
     val batchSize = 10

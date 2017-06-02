@@ -35,9 +35,8 @@ class Nd4jNetSpec extends PlaySpec {
       val nn = new Nd4jNet(topology)
       val x = ones(2, 1)
 
-      val (zs, as) = nn.feedForward(x)
+      val as = nn.feedForward(x)
 
-      println(zs)
       println(as)
     }
 
@@ -115,7 +114,7 @@ class Nd4jNetSpec extends PlaySpec {
       val epochs = 3
       val batchSize = 100
       val learningRate = 3.0
-      val trainingData = Nd4jNet.loadData("data/mnist_train.csv")
+      val trainingData = Nd4jNet.loadData("data/mnist_train.csv").map{ case (x, y) => (x, Nd4jNet.oneHotEncoded(y))}
       nn.sgd(trainingData, epochs, batchSize, learningRate)
 
     }

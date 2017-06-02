@@ -6,8 +6,6 @@ import java.util.zip.GZIPInputStream
 import org.nd4j.linalg.api.ndarray.INDArray
 import org.nd4j.linalg.factory.Nd4j._
 import org.nd4j.linalg.ops.transforms.Transforms._
-import org.nd4j.linalg.api.buffer.DataBuffer
-import org.nd4j.linalg.api.buffer.util.DataTypeUtil
 
 import scala.io.Source
 import scala.language.postfixOps
@@ -59,13 +57,13 @@ class Nd4jNet(topology: List[Int]) {
     }
   }
 
-  def feedForward(x: INDArray): (List[INDArray], List[INDArray]) = {
-    biases.zip(weights).foldLeft(List.empty[INDArray], List(x)) {
-      case ((zs, as), (b, w)) =>
+  def feedForward(x: INDArray): List[INDArray] = {
+    biases.zip(weights).foldLeft(List(x)) {
+      case (as, (b, w)) =>
         // z = np.dot(w, activation)+b
         val z = w.mmul(as.last).add(b)
         val a = sigmoid(z)
-        (zs :+ z, as :+ a)
+        as :+ a
     }
   }
 
@@ -111,16 +109,16 @@ class Nd4jNet(topology: List[Int]) {
   /**
     * Return a tuple ``(nabla_b, nabla_w)`` representing the
     * gradient for the cost function C_x.  ``nabla_b`` and
-    * ``nabla_w`` are layer-by-layer lists of numpy arrays, similar
-    * to ``self.biases`` and ``self.weights``.
+    * ``nabla_w`` are layer-by-layer lists of arrays, similar
+    * to ``biases`` and ``weights``.
     */
   def backProp(x: INDArray, y: INDArray): (List[INDArray], List[INDArray]) = {
 
-    val (zs, activations) = feedForward(x)
+    val activations = feedForward(x)
 
     // delta = (activations[-1] - y) * sigmoid_prime(zs[-1])
     val a = activations.last.sub(y)
-    val sp = sigmoidPrime(zs.last)
+    val sp = derivative(activations.last)
     val delta = a.mul(sp)
 
     val inb = delta
@@ -131,13 +129,12 @@ class Nd4jNet(topology: List[Int]) {
       .foldLeft((List(inb), List(inw))) {
         case ((nbl, nwl), l) =>
           // z = zs[-l]
-          val z = zs(zs.size - l)
-          val sp = sigmoidPrime(z)
+          val sp = derivative(activations(activations.size - l))
 
           // delta = np.dot(self.weights[-l+1].transpose(), delta) * sp
           val delta = weights(weights.size - l + 1)
             .transpose()
-            .mmul(nbl.head) // last added nbl is the previous delta
+            .mmul(nbl.head) // last added nb to nbl is the previous delta
             .mul(sp)
 
           val nb = delta
@@ -154,10 +151,9 @@ class Nd4jNet(topology: List[Int]) {
   /**
     * Derivative of the sigmoid function.
     */
-  def sigmoidPrime(z: INDArray): INDArray = {
+  def derivative(z: INDArray): INDArray = {
     // sigmoid(z)*(1-sigmoid(z))
-    val sz = sigmoid(z)
-    sz.mul(sz.neg().add(1.0))
+    z.mul(z.neg().add(1.0))
   }
 
   def evaluate(testData: List[(INDArray, Int)]): Double = {
@@ -203,7 +199,9 @@ object Nd4jNet {
     val epochs = 30
     val batchSize = 10
     val learningRate = 3.0
-    val trainingData = Nd4jNet.loadData("data/mnist_train.csv.gz").map{case (x, y) => (x, oneHotEncoded(y))}
+    val trainingData = Nd4jNet.loadData("data/mnist_train.csv.gz").map {
+      case (x, y) => (x, oneHotEncoded(y))
+    }
     val testData = Nd4jNet.loadData("data/mnist_test.csv.gz")
     nn.sgd(trainingData, epochs, batchSize, learningRate, testData)
   }

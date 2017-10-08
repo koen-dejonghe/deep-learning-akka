@@ -1,24 +1,19 @@
 package nn
 
-import java.io.{BufferedInputStream, FileInputStream}
-import java.util.zip.GZIPInputStream
-
 import org.nd4j.linalg.api.ndarray.INDArray
 import org.nd4j.linalg.factory.Nd4j._
 import org.nd4j.linalg.ops.transforms.Transforms._
-import org.nd4s.Implicits._
 
-import scala.io.Source
 import scala.language.postfixOps
 import scala.util.Random
 
-class Nd4jNet(topology: List[Int]) {
+class Network2(topology: List[Int]) {
 
   val biases: List[INDArray] =
     topology.tail.map(size => randn(size, 1))
 
   val weights: List[INDArray] =
-    topology.sliding(2).map(t => randn(t(1), t.head)) toList
+    topology.sliding(2).map(t => randn(t(1), t.head)).toList
 
   /**
     * Train the neural network using mini-batch stochastic
@@ -33,20 +28,17 @@ class Nd4jNet(topology: List[Int]) {
           testData: List[(INDArray, Int)] = List.empty): Unit = {
 
     (1 to epochs).foreach { j =>
-
-      val t0 = System.currentTimeMillis()
       println(s"Epoch $j starting")
       val shuffled = Random.shuffle(trainingData)
       shuffled.sliding(miniBatchSize, miniBatchSize).foreach { miniBatch =>
         updateMiniBatch(miniBatch, learningRate)
       }
-      val t1 = System.currentTimeMillis()
 
       if (testData.nonEmpty) {
         val eval = evaluate(testData)
-        println(s"Epoch $j ==> $eval (${t1 - t0})")
+        println(s"Epoch $j ==> $eval")
       } else {
-        println(s"Epoch $j complete (${t1 - t0})")
+        println(s"Epoch $j complete")
       }
     }
   }
@@ -55,7 +47,7 @@ class Nd4jNet(topology: List[Int]) {
     biases.zip(weights).foldLeft(List(x)) {
       case (as, (b, w)) =>
         // z = np.dot(w, activation)+b
-        val z = (w dot as.last) + b
+        val z = w.mmul(as.last).add(b)
         val a = sigmoid(z)
         as :+ a
     }
@@ -79,23 +71,23 @@ class Nd4jNet(topology: List[Int]) {
 
         nablaBiases.zip(deltaNablaB).foreach {
           case (nb, dnb) =>
-            nb += dnb
+            nb.addi(dnb)
         }
 
         nablaWeights.zip(deltaNablaW).foreach {
           case (nw, dnw) =>
-            nw += dnw
+            nw.addi(dnw)
         }
     }
 
     biases.zip(nablaBiases).foreach {
       case (b, nb) =>
-        b -= nb * (learningRate / miniBatch.size)
+        b.subi(nb.mul(learningRate / miniBatch.size))
     }
 
     weights.zip(nablaWeights).foreach {
       case (w, nw) =>
-        w -= nw * (learningRate / miniBatch.size)
+        w.subi(nw.mul(learningRate / miniBatch.size))
     }
 
   }
@@ -113,24 +105,26 @@ class Nd4jNet(topology: List[Int]) {
     // quadratic cost function
     // delta = self.cost_derivative(activations[-1], y) * sigmoid_prime(zs[-1])
     // delta = (activations[-1] - y) * sigmoid_prime(zs[-1])
-    val a = activations.last - y
+    val a = activations.last.sub(y)
     val sp = derivative(activations.last)
-    val delta = a * sp
+    val delta = a.mul(sp)
 
     val inb = delta
     // np.dot(delta, activations[-2].transpose())
-    val inw = delta dot activations(activations.size - 2).transpose()
+    val inw = delta.mmul(activations(activations.size - 2).transpose())
 
     val (nablaBiases, nablaWeights) = (topology.size - 2 until 0 by -1)
       .foldLeft((List(inb), List(inw))) {
         case ((nbl, nwl), l) =>
           val sp = derivative(activations(l))
 
-          // last added nb to nbl is the previous delta
-          val delta = (weights(l).transpose() dot nbl.head) * sp
+          val delta = weights(l)
+            .transpose()
+            .mmul(nbl.head) // last added nb to nbl is the previous delta
+            .mul(sp)
 
           val nb = delta
-          val nw = delta dot activations(l - 1).transpose()
+          val nw = delta.mmul(activations(l - 1).transpose())
 
           (nb :: nbl, nw :: nwl)
       }
@@ -142,14 +136,14 @@ class Nd4jNet(topology: List[Int]) {
     * Derivative of the sigmoid function.
     * sigmoid(z)*(1-sigmoid(z))
     */
-  def derivative(z: INDArray): INDArray = z * (- z + 1.0)
+  def derivative(z: INDArray): INDArray = z.mul(z.neg().add(1.0))
 
   def evaluate(testData: List[(INDArray, Int)]): Double = {
     val correct = testData.foldLeft(0.0) {
       case (t, (x, y)) =>
         val activation = biases.zip(weights).foldLeft(x) {
           case (a, (b, w)) =>
-            sigmoid((w dot a) + b)
+            sigmoid(w.mmul(a).add(b))
         }
 
         val guess = argMax(activation).getInt(0)
@@ -161,37 +155,4 @@ class Nd4jNet(topology: List[Int]) {
 
 }
 
-object Nd4jNet {
 
-  def oneHotEncoded(x: Int, base: Int = 10): INDArray = {
-    val v = zeros(1, base)
-    v.putScalar(x, 1.0)
-  }
-
-  def gzis(fname: String): GZIPInputStream =
-    new GZIPInputStream(new BufferedInputStream(new FileInputStream(fname)))
-
-  def loadData(fname: String): List[(INDArray, Int)] = {
-    Source.fromInputStream(gzis(fname)).getLines() map { line =>
-      val tokens = line.split(",")
-      val (y, x) = (tokens.head.toInt, tokens.tail.map(_.toDouble / 255.0))
-      (create(x).transpose(), y)
-    } toList
-  }
-
-  def main(args: Array[String]) {
-    println("Hello, world")
-
-    val topology = List(784, 30, 30, 10)
-    val nn = new Nd4jNet(topology)
-    val epochs = 30
-    val batchSize = 10
-    val learningRate = 3.0
-    val trainingData = Nd4jNet.loadData("data/mnist_train.csv.gz").map {
-      case (x, y) => (x, oneHotEncoded(y))
-    }
-    val testData = Nd4jNet.loadData("data/mnist_test.csv.gz")
-    nn.sgd(trainingData, epochs, batchSize, learningRate, testData)
-  }
-
-}
